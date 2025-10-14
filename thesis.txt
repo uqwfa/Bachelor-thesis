@@ -34,3 +34,6 @@ MultiIndex([('1957-03-31', 10006.0),
             ('1957-03-31', 10057.0),
             ('1957-03-31', 10102.0)],
            names=['eom', 'permno'])
+
+- There are 2890 different permnos (unique stocks) in the dataset.
+- There are 153 different features
