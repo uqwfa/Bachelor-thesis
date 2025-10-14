@@ -1,0 +1,36 @@
+- The "characteristics_ranknorm.pq" is the X input and the "returns_ranked.pq" is the y target variable
+for supervised learning of the learn-to-rank models.
+
+- Both datasets are read as Dask DataFrames with the given layout:
+Computing shapes...
+X shape: (2533500, 153)
+y shape: (2533500, 2)
+------------------------------
+Inspecting X_ddf Index:
+  Index Name: None
+  Index Dtype: object
+  Num Partitions: 3
+  Divisions: (None, None, None, None)
+
+Computing a sample of the index...
+  Sample of Index Values:
+MultiIndex([('1957-03-31', 10006.0),
+            ('1957-03-31', 10022.0),
+            ('1957-03-31', 10030.0),
+            ('1957-03-31', 10057.0),
+            ('1957-03-31', 10102.0)],
+           names=['eom', 'permno'])
+Inspecting y_ddf Index:
+  Index Name: None
+  Index Dtype: object
+  Num Partitions: 1
+  Divisions: (None, None)
+
+Computing a sample of the index...
+  Sample of Index Values:
+MultiIndex([('1957-03-31', 10006.0),
+            ('1957-03-31', 10022.0),
+            ('1957-03-31', 10030.0),
+            ('1957-03-31', 10057.0),
+            ('1957-03-31', 10102.0)],
+           names=['eom', 'permno'])
