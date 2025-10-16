@@ -9,8 +9,8 @@ import dask
 import time
 import sys
 import os
-from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras import layers, models, Input
 from tensorflow.keras.utils import Sequence
 
 
@@ -22,7 +22,7 @@ def create_ranknet_model(num_features):
         layers.Dense(64, activation='relu'),
         layers.Dropout(0.3),
         layers.Dense(1)
-    ])
+    ], name="scoring_model")
 
     return model
 
@@ -39,48 +39,41 @@ class DataGenerator(Sequence):
 
         self.grouped = list(df.groupby(level="eom"))
         self.group_indices = np.arange(len(self.grouped))
-        self.total_samples = len(df)
         self.on_epoch_end()
 
     def __len__(self):
-        return int(np.floor(self.total_samples / self.batch_size))
+        return len(self.df) // self.batch_size
 
     def __getitem__(self, idx):
-        X_batch = []
+        X_i_batch = []
+        X_j_batch = []
         y_batch = []
 
-        while len(X_batch) < self.batch_size:
+        while len(X_i_batch) < self.batch_size:
             group_idx = np.random.choice(self.group_indices)
             _, group = self.grouped[group_idx]
 
             if len(group) < 2:
                 continue
 
-            anchor_idx = np.random.randint(0, len(group))
-            row1 = group.iloc[anchor_idx]
+            indices = np.random.choice(len(group), 2, replace=False)
+            row1 = group.iloc[indices[0]]
+            row2 = group.iloc[indices[1]]
 
-            for _ in range(self.samples_per_stock):
-                other_idx = np.random.randint(0, len(group))
+            features_i = row1[self.feature_cols].values
+            features_j = row2[self.feature_cols].values
 
-                while other_idx == anchor_idx:
-                    other_idx = np.random.randint(0, len(group))
+            if row1[self.target_col] < row2[self.target_col]:
+                label = 1
 
-                row2 = group.iloc[other_idx]
+            else:
+                label = 0
 
-                features = row1[self.feature_cols].values - row2[self.feature_cols].values
+            X_i_batch.append(features_i)
+            X_j_batch.append(features_j)
+            y_batch.append(label)
 
-                if row1[self.target_col] < row2[self.target_col]:
-                    label = 1
-                else:
-                    label = 0
-
-                X_batch.append(features)
-                y_batch.append(label)
-
-                if len(X_batch) >= self.batch_size:
-                    break
-
-        return np.array(X_batch), np.array(y_batch)
+        return (np.array(X_i_batch), np.array(X_j_batch)), np.array(y_batch)
 
     def on_epoch_end(self):
         np.random.shuffle(self.group_indices)
@@ -92,7 +85,7 @@ modelLoc = "./model/"
 
 # t = time.time()
 
-X_dff = dd.read_parquet(os.path.join(dataLoc, "characteristics_ranknorm.pq"))
+# X_dff = dd.read_parquet(os.path.join(dataLoc, "characteristics_ranknorm.pq"))
 # y_dff = dd.read_parquet(os.path.join(dataLoc, "returns_ranked.pq"))
 
 # full_dff = X_dff.merge(y_dff, left_index=True, right_index=True)
@@ -119,11 +112,11 @@ print("Computing training sample into memory...")
 train_df = train_sample_ddf.compute()
 print(f"Computation complete in {(time.time() - t) / 60:.2f} min.")
 
-print(len(train_df))
-print(train_df.shape)
+# print(len(train_df))
+# print(train_df.shape)
 print(train_df.head(10))
-print(train_df["permno"].max())
-print(train_df["permno"].min())
+# print(train_df["permno"].max())
+# print(train_df["permno"].min())
 
 
 all_dates = train_df.index.unique()
@@ -137,9 +130,10 @@ val_data = train_df.loc[test_dates]
 print(f"Training data shape: {train_data.shape}")
 print(f"Validation data shape: {val_data.shape}")
 
-feature_cols = X_dff.columns.tolist()
+feature_cols = [col for col in train_df.columns if col not in ["permno", "ret_exc_lead1m", "ret_exc_lead1m_rank"]]
 num_features = len(feature_cols)
-batch_size = 128
+print(f"Number of features: {num_features}")
+batch_size = 1024
 
 train_generator = DataGenerator(
     train_data,
@@ -157,30 +151,44 @@ val_generator = DataGenerator(
     samples_per_stock=10
 )
 
-model = create_ranknet_model(num_features)
-model.summary()
-model.compile(
+scoring_model = create_ranknet_model(num_features)
+
+input_i = Input(shape=(num_features,), name="item_i")
+input_j = Input(shape=(num_features,), name="item_j")
+
+score_i = scoring_model(input_i)
+score_j = scoring_model(input_j)
+
+diff = layers.Subtract()([score_i, score_j])
+ranknet_model = models.Model(inputs=[input_i, input_j], outputs=diff, name="RankNet_Model")
+
+ranknet_model.compile(
     optimizer="adam",
     loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
     metrics=["accuracy"]
 )
+
+ranknet_model.summary()
+
 early_stopper = EarlyStopping(
     monitor='val_loss',
-    patience=5,
+    patience=10,
     restore_best_weights=True
 )
 
 print("Training...")
 t = time.time()
 
-history = model.fit(
+history = ranknet_model.fit(
     train_generator,
     validation_data=val_generator,
-    epochs=20,
+    epochs=2,
     callbacks=[early_stopper]
 )
 
 print(f"Training complete in {(time.time() - t) / 60:.2f} min.")
+
+scoring_model.save(os.path.join(modelLoc, "scoring_ranknet.keras"))
 
 # Erstelle eine neue Abbildung
 plt.figure(figsize=(10, 6))

@@ -1,3 +1,5 @@
+- \\fbv-cram-data.fbv.kit.edu\Austausch_Mathis_Mahsa_ML_Ranking\03_data
+
 - The "characteristics_ranknorm.pq" is the X input and the "returns_ranked.pq" is the y target variable
 for supervised learning of the learn-to-rank models.
 
